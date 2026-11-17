@@ -1,0 +1,32 @@
+[
+  {
+    "type": "click",
+    "x": 28,
+    "y": 870,
+    "isInput": false
+  },
+  {
+    "type": "click",
+    "x": 308,
+    "y": 297,
+    "isInput": false
+  },
+  {
+    "type": "click",
+    "x": 539,
+    "y": 187,
+    "isInput": true
+  },
+  {
+    "type": "click",
+    "x": 849,
+    "y": 784,
+    "isInput": false
+  },
+  {
+    "type": "click",
+    "x": 46,
+    "y": 16,
+    "isInput": false
+  }
+]
