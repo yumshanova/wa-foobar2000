@@ -5,12 +5,12 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
 if (!fs.existsSync('./config.js')) {
-    console.error('Скопируй config.example.js в config.js и заполни свои данные!');
+    console.error('Ошибка: файл config.js не найден! Скопируйте config.example.js в config.js и заполните его.');
     process.exit(1);
 }
 
 const config = require('./config');
-const RECORD_MODE = process.argv.includes('--record'); // Запуск записи через: node index.js --record
+const RECORD_MODE = process.argv.includes('--record');
 const MACRO_FILE = 'macro.json';
 
 const proxyAgent = config.LASTFM_PROXY ? new HttpsProxyAgent(config.LASTFM_PROXY) : undefined;
@@ -18,7 +18,7 @@ const proxyAgent = config.LASTFM_PROXY ? new HttpsProxyAgent(config.LASTFM_PROXY
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        headless: false,
+        headless: RECORD_MODE ? false : Boolean(config.HEADLESS),
         defaultViewport: { width: 1280, height: 900 },
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,900']
     }
@@ -36,16 +36,46 @@ client.on('qr', (qr) => {
 });
 
 client.on('ready', async () => {
+    if (RECORD_MODE) {
+        console.log('РЕЖИМ ОБУЧЕНИЯ: откройте профиль -> "О себе" -> кликните в поле ввода -> сохраните -> вернитесь к чатам.');
+        console.log('После этого нажмите Ctrl+C в консоли для сохранения macro.json.');
+        await startMacroRecorder();
+        return;
+    }
+
     if (!fs.existsSync(MACRO_FILE)) {
-        console.error(`Ошибка: файл ${MACRO_FILE} не найден!`);
+        console.error(`Ошибка: файл ${MACRO_FILE} не найден! Запустите скрипт с флагом --record для записи кликов.`);
         process.exit(1);
     }
 
     console.log('WhatsApp подключен! Отслеживаю foobar2000 и Last.fm...');
-    setInterval(checkPlayback, POLL_INTERVAL_MS);
+    setInterval(checkPlayback, config.POLL_INTERVAL_MS || 1500);
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function startMacroRecorder() {
+    const page = client.pupPage;
+    const recorded = [];
+
+    await page.exposeFunction('__recordClick', (x, y, isInput) => {
+        recorded.push({ type: 'click', x, y, isInput });
+        console.log(`Записан клик: x=${x}, y=${y}${isInput ? ' [Поле ввода]' : ''}`);
+    });
+
+    await page.evaluate(() => {
+        document.addEventListener('click', (e) => {
+            const el = e.target.closest('input, textarea, [contenteditable="true"], [role="textbox"]');
+            window.__recordClick(Math.round(e.clientX), Math.round(e.clientY), Boolean(el));
+        }, true);
+    });
+
+    process.on('SIGINT', () => {
+        fs.writeFileSync(MACRO_FILE, JSON.stringify(recorded, null, 2));
+        console.log(`\nСохранено ${recorded.length} действий в ${MACRO_FILE}`);
+        process.exit(0);
+    });
+}
 
 function fetchJsonViaProxy(url, agent) {
     return new Promise((resolve, reject) => {
@@ -142,8 +172,10 @@ async function runTrainedMacro(newStatus) {
 }
 
 async function getFoobarTrack() {
+    if (!config.BEEFWEB_URL) return null;
+
     try {
-        const res = await fetch(BEEFWEB_URL);
+        const res = await fetch(config.BEEFWEB_URL);
         const data = await res.json();
 
         if (data.player && data.player.playbackState === 'playing') {
@@ -160,7 +192,7 @@ async function getFoobarTrack() {
 }
 
 async function getLastFmTrack() {
-    if (!LASTFM_USER || !LASTFM_API_KEY || LASTFM_API_KEY === 'ТВОЙ_API_KEY_ОТ_LASTFM') {
+    if (!config.LASTFM_USER || !config.LASTFM_API_KEY || config.LASTFM_API_KEY === 'YOUR_LASTFM_API_KEY') {
         return null;
     }
 
@@ -170,7 +202,7 @@ async function getLastFmTrack() {
     }
 
     try {
-        const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(LASTFM_USER)}&api_key=${LASTFM_API_KEY}&format=json&limit=1`;
+        const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(config.LASTFM_USER)}&api_key=${config.LASTFM_API_KEY}&format=json&limit=1`;
         const data = await fetchJsonViaProxy(url, proxyAgent);
         const latest = data?.recenttracks?.track?.[0];
 
@@ -182,7 +214,8 @@ async function getLastFmTrack() {
         } else {
             lastFmCache = { status: null, checkedAt: now };
         }
-    } catch {
+    } catch (err) {
+        console.error('Ошибка Last.fm:', err.message);
         lastFmCache.checkedAt = now;
     }
 
@@ -191,7 +224,7 @@ async function getLastFmTrack() {
 
 async function checkPlayback() {
     const foobarStatus = await getFoobarTrack();
-    const currentTrackStatus = foobarStatus || (await getLastFmTrack()) || DEFAULT_BIO;
+    const currentTrackStatus = foobarStatus || (await getLastFmTrack()) || config.DEFAULT_BIO || 'Доступен';
 
     if (currentTrackStatus !== lastSentStatus) {
         if (currentTrackStatus !== targetStatus) {
@@ -212,7 +245,7 @@ async function checkPlayback() {
                         isUpdating = false;
                     }
                 }
-            }, DEBOUNCE_MS);
+            }, config.DEBOUNCE_MS || 2500);
         }
     } else {
         targetStatus = lastSentStatus;
