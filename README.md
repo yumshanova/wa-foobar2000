@@ -16,13 +16,21 @@
 ## Установка и запуск
 
 1. Клонируйте репозиторий и установите зависимости:
-   git clone 
-   cd wa-foobar2000
-   npm install
+```bash
+git clone https://github.com/yumshanova/wa-foobar2000.git
+cd wa-foobar2000
+npm install
+```
+
 2. Скопируйте файл конфигурации и впишите свои данные:
-   copy config.example.js config.js
+```bash
+copy config.example.js config.js
+```
+
 3. Запустите скрипт и отсканируйте QR-код в WhatsApp:
-   node index.js
+```bash
+node index.js
+```
 
 ## Синхронизация со смартфона (Android)
 
